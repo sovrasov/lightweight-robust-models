@@ -189,7 +189,7 @@ def main():
         train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        val_loss, prec1 = validate(val_loader, val_loader_len, model, criterion)
+        val_loss, prec1, prec5 = validate(val_loader, val_loader_len, model, criterion)
 
         lr = optimizer.param_groups[0]['lr']
 
@@ -200,6 +200,7 @@ def main():
         writer.add_scalar('learning rate', lr, epoch + 1)
         writer.add_scalars('loss', {'train loss': train_loss, 'validation loss': val_loss}, epoch + 1)
         writer.add_scalars('accuracy', {'train accuracy': train_acc, 'validation accuracy': prec1}, epoch + 1)
+        print('\nVal results: [%d | %d]' % (prec1, prec5))
 
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
@@ -325,7 +326,7 @@ def validate(val_loader, val_loader_len, model, criterion):
                     )
         bar.next()
     bar.finish()
-    return (losses.avg, top1.avg)
+    return (losses.avg, top1.avg, top5.avg)
 
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
