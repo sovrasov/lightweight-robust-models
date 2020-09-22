@@ -251,7 +251,13 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
         target = target.cuda(non_blocking=True)
 
         # compute output
-        output = model(input)
+        if args.adv_eps > 0.:
+            adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps,
+                                  step_size=2./3.*args.adv_eps, criterion=criterion)
+            output = model(adv_data)
+        else:
+            output = model(input)
+
         loss = criterion(output, target)
 
         # measure accuracy and record loss
@@ -319,7 +325,8 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
         top5.update(prec5.item(), input.size(0))
 
         if adv_eps > 0.:
-            adv_data = pgd_attack(model, input, target, epsilon=adv_eps, step_size=2./3.*adv_eps)
+            adv_data = pgd_attack(model, input, target, epsilon=adv_eps,
+                                  step_size=2./3.*adv_eps, criterion=criterion)
             with torch.no_grad():
                 output = model(adv_data)
                 loss = criterion(output, target)
