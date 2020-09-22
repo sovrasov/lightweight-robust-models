@@ -69,6 +69,8 @@ parser.add_argument('--dist-backend', default='nccl', type=str,
 parser.add_argument('--seed', default=None, type=int,
                     help='seed for initializing training. ')
 
+parser.add_argument('--adv-eps', type=float, default=0.01)
+
 parser.add_argument('--lr-decay', type=str, default='step',
                     help='mode for learning rate decay')
 parser.add_argument('--step', type=int, default=30,
@@ -168,8 +170,12 @@ def main():
             source_state = torch.load(args.weight)
             if 'state_dict' in source_state:
                 source_state = source_state['state_dict']
+            if 'model' in source_state:
+                source_state = source_state['model']
             target_state = OrderedDict()
             for k, v in source_state.items():
+                if k.startswith('model.'):
+                    k = k[:6]
                 if k[:7] != 'module.':
                     k = 'module.' + k
                 target_state[k] = v
@@ -177,7 +183,7 @@ def main():
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        validate(val_loader, val_loader_len, model, criterion)
+        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps)
         return
 
     # visualization
