@@ -22,6 +22,8 @@ from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from utils.dataloaders import *
 from tensorboardX import SummaryWriter
 
+from utils.pgd import pgd_attack
+
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('-d', '--data', metavar='DIR',
@@ -164,6 +166,8 @@ def main():
         if os.path.isfile(args.weight):
             print("=> loading pretrained weight '{}'".format(args.weight))
             source_state = torch.load(args.weight)
+            if 'state_dict' in source_state:
+                source_state = source_state['state_dict']
             target_state = OrderedDict()
             for k, v in source_state.items():
                 if k[:7] != 'module.':
@@ -200,7 +204,7 @@ def main():
         writer.add_scalar('learning rate', lr, epoch + 1)
         writer.add_scalars('loss', {'train loss': train_loss, 'validation loss': val_loss}, epoch + 1)
         writer.add_scalars('accuracy', {'train accuracy': train_acc, 'validation accuracy': prec1}, epoch + 1)
-        print('\nVal results: [%d | %d]' % (prec1, prec5))
+        print('Val results: [%.2f | %.2f]' % (prec1, prec5))
 
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
@@ -278,7 +282,7 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
     return (losses.avg, top1.avg)
 
 
-def validate(val_loader, val_loader_len, model, criterion):
+def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
     bar = Bar('Processing', max=val_loader_len)
 
     batch_time = AverageMeter()
@@ -286,6 +290,8 @@ def validate(val_loader, val_loader_len, model, criterion):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
+    adv_top1 = AverageMeter()
+    adv_top5 = AverageMeter()
 
     # switch to evaluate mode
     model.eval()
@@ -308,6 +314,15 @@ def validate(val_loader, val_loader_len, model, criterion):
         top1.update(prec1.item(), input.size(0))
         top5.update(prec5.item(), input.size(0))
 
+        if adv_eps > 0.:
+            adv_data = pgd_attack(model, input, target, epsilon=adv_eps, step_size=2./3.*adv_eps)
+            with torch.no_grad():
+                output = model(adv_data)
+                loss = criterion(output, target)
+            adv_prec1, adv_prec5 = accuracy(output, target, topk=(1, 5))
+            adv_top1.update(adv_prec1.item(), input.size(0))
+            adv_top5.update(adv_prec5.item(), input.size(0))
+
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -324,6 +339,8 @@ def validate(val_loader, val_loader_len, model, criterion):
                     top1=top1.avg,
                     top5=top5.avg,
                     )
+        if adv_eps > 0.:
+            bar.suffix.append(f'| adv_top1 {adv_top1.avg} | adv_top5 {adv_top5.avg}')
         bar.next()
     bar.finish()
     return (losses.avg, top1.avg, top5.avg)
