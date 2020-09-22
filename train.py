@@ -13,13 +13,10 @@ import torch.distributed as dist
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import torchvision.models as models
 from pytorchcv.model_provider import get_model, _models
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
-from utils.dataloaders import *
+from utils.dataloaders import get_pytorch_train_loader, get_pytorch_val_loader
 from tensorboardX import SummaryWriter
 
 from utils.pgd import pgd_attack
@@ -193,13 +190,14 @@ def main():
         if args.distributed:
             train_sampler.set_epoch(epoch)
 
-        print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
+        print(f'\nEpoch: [{epoch + 1} | {args.epochs}]')
 
         # train for one epoch
         train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, epoch)
 
         # evaluate on validation set
-        val_loss, prec1, prec5 = validate(val_loader, val_loader_len, model, criterion)
+        val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
+                                                                model, criterion, adv_eps=args.adv_eps)
 
         lr = optimizer.param_groups[0]['lr']
 
@@ -210,7 +208,7 @@ def main():
         writer.add_scalar('learning rate', lr, epoch + 1)
         writer.add_scalars('loss', {'train loss': train_loss, 'validation loss': val_loss}, epoch + 1)
         writer.add_scalars('accuracy', {'train accuracy': train_acc, 'validation accuracy': prec1}, epoch + 1)
-        print('Val results: [%.2f | %.2f]' % (prec1, prec5))
+        print(f'Val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
@@ -349,7 +347,7 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
             bar.suffix += f'| adv_top1 {adv_top1.avg:.4f} | adv_top5 {adv_top5.avg:.4f}'
         bar.next()
     bar.finish()
-    return (losses.avg, top1.avg, top5.avg)
+    return (losses.avg, top1.avg, top5.avg, adv_top1.avg, adv_top5.avg)
 
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
