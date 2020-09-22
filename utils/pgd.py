@@ -17,12 +17,13 @@ def pgd_attack(model,
     #out = model(X)
     #err = (out.data.max(1)[1] != y.data).float().sum()
     #TODO: find a other way
-    device = X.device
-    imageArray = X.detach().cpu().numpy()
-    X_random = np.random.uniform(-epsilon, epsilon, X.shape)
-    imageArray = np.clip(imageArray + X_random, 0, 1.0)
-
-    X_pgd = torch.tensor(imageArray).to(device).float()
+    #device = X.device
+    #imageArray = X.detach().cpu().numpy()
+    #np.random.uniform(-epsilon, epsilon, X.shape)
+    #imageArray = np.clip(imageArray + X_random, 0, 1.0)
+    #X_pgd = torch.tensor(imageArray).to(device).float()
+    X_random = 2 * (torch.rand_like(X) - 0.5) * epsilon
+    X_pgd = torch.clamp(X.detach() + X_random, clip_min, clip_max)
     X_pgd.requires_grad = True
 
     for i in range(num_steps):
