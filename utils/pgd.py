@@ -25,10 +25,11 @@ def pgd_attack(model,
     X_random = 2 * (torch.rand_like(X) - 0.5) * epsilon
     X_pgd = torch.clamp(X.detach() + X_random, clip_min, clip_max)
     X_pgd.requires_grad = True
+    criterion = nn.CrossEntropyLoss()
 
     for i in range(num_steps):
         pred = model(X_pgd)
-        loss = nn.CrossEntropyLoss()(pred, y)
+        loss = criterion(pred, y)
 
         if print_process:
             print("iteration {:.0f}, loss:{:.4f}".format(i,loss))

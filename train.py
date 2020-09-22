@@ -346,7 +346,7 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
                     top5=top5.avg,
                     )
         if adv_eps > 0.:
-            bar.suffix += f'| adv_top1 {adv_top1.avg} | adv_top5 {adv_top5.avg}'
+            bar.suffix += f'| adv_top1 {adv_top1.avg:.4f} | adv_top5 {adv_top5.avg:.4f}'
         bar.next()
     bar.finish()
     return (losses.avg, top1.avg, top5.avg)
