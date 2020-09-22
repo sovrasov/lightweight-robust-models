@@ -174,12 +174,12 @@ def main():
                 source_state = source_state['model']
             target_state = OrderedDict()
             for k, v in source_state.items():
-                if k.startswith('model.'):
-                    k = k[:6]
+                if k.startswith('module.model.'):
+                    k = k[len('module.model.'):]
                 if k[:7] != 'module.':
                     k = 'module.' + k
                 target_state[k] = v
-            model.load_state_dict(target_state)
+            model.load_state_dict(target_state, strict=False)
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
@@ -346,7 +346,7 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
                     top5=top5.avg,
                     )
         if adv_eps > 0.:
-            bar.suffix.append(f'| adv_top1 {adv_top1.avg} | adv_top5 {adv_top5.avg}')
+            bar.suffix += f'| adv_top1 {adv_top1.avg} | adv_top5 {adv_top5.avg}'
         bar.next()
     bar.finish()
     return (losses.avg, top1.avg, top5.avg)
