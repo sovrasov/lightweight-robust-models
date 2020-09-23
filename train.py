@@ -67,6 +67,7 @@ parser.add_argument('--seed', default=None, type=int,
                     help='seed for initializing training. ')
 
 parser.add_argument('--adv-eps', type=float, default=0.01)
+parser.add_argument('--euclidean', dest='euclidean', action='store_true')
 
 parser.add_argument('--lr-decay', type=str, default='step',
                     help='mode for learning rate decay')
@@ -171,8 +172,8 @@ def main():
                 source_state = source_state['model']
             target_state = OrderedDict()
             for k, v in source_state.items():
-                if k.startswith('module.model.'):
-                    k = k[len('module.model.'):]
+                if k.startswith('module.attacker.model.'):
+                    k = k[len('module.attacker.model.'):]
                 if k[:7] != 'module.':
                     k = 'module.' + k
                 target_state[k] = v
@@ -180,7 +181,8 @@ def main():
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps)
+        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps, 
+                 euclidean_adv=args.euclidean)
         return
 
     # visualization
@@ -197,7 +199,8 @@ def main():
 
         # evaluate on validation set
         val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
-                                                                model, criterion, adv_eps=args.adv_eps)
+                                                                model, criterion, adv_eps=args.adv_eps,
+                                                                euclidean_adv=args.euclidean)
 
         lr = optimizer.param_groups[0]['lr']
 
@@ -252,8 +255,10 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
 
         # compute output
         if args.adv_eps > 0.:
-            adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps,
+            model.eval()
+            adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps, euclidean=args.euclidean,
                                   step_size=2./3.*args.adv_eps, criterion=criterion)
+            model.train()
             output = model(adv_data)
         else:
             output = model(input)
@@ -292,7 +297,7 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
     return (losses.avg, top1.avg)
 
 
-def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
+def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0, euclidean_adv=False):
     bar = Bar('Processing', max=val_loader_len)
 
     batch_time = AverageMeter()
@@ -325,7 +330,7 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0):
         top5.update(prec5.item(), input.size(0))
 
         if adv_eps > 0.:
-            adv_data = pgd_attack(model, input, target, epsilon=adv_eps,
+            adv_data = pgd_attack(model, input, target, epsilon=adv_eps, euclidean=euclidean_adv,
                                   step_size=2./3.*adv_eps, criterion=criterion)
             with torch.no_grad():
                 output = model(adv_data)

@@ -14,7 +14,13 @@ def pgd_attack(model,
                criterion=nn.CrossEntropyLoss(),
                print_process=False,
                ):
-    X_random = 2 * (torch.rand_like(X) - 0.5) * epsilon
+    if euclidean:
+        l = len(X.shape) - 1
+        rp = torch.randn_like(X)
+        rp_norm = rp.view(rp.shape[0], -1).norm(dim=1).view(-1, *([1]*l))
+        X_random = epsilon * rp / (rp_norm + 1e-10)
+    else:
+        X_random = 2 * (torch.rand_like(X) - 0.5) * epsilon
     X_pgd = torch.clamp(X.detach() + X_random, clip_min, clip_max)
     X_pgd.requires_grad = True
 
@@ -27,7 +33,13 @@ def pgd_attack(model,
 
         loss.backward()
 
-        eta = step_size * X_pgd.grad.data.sign()
+        if euclidean:
+            g = X_pgd.grad.data
+            l = len(X.shape) - 1
+            g_norm = torch.norm(g.view(g.shape[0], -1), dim=1).view(-1, *([1]*l))
+            eta = step_size * g.data / (g_norm + 1e-10)
+        else:
+            eta = step_size * X_pgd.grad.data.sign()
 
         X_pgd = X_pgd + eta
         if euclidean:
@@ -35,8 +47,7 @@ def pgd_attack(model,
         else:
             eta = torch.clamp(X_pgd.data - X.data, -epsilon, epsilon)
 
-        X_pgd = X.data + eta
-        X_pgd = torch.clamp(X_pgd, clip_min, clip_max)
+        X_pgd = torch.clamp(X.data + eta, clip_min, clip_max)
         X_pgd = X_pgd.detach()
         X_pgd.requires_grad_()
         X_pgd.retain_grad()
