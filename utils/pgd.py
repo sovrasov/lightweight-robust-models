@@ -2,6 +2,12 @@ import torch
 import torch.nn as nn
 
 
+def vactor_norm(x):
+    return x.view(x.shape[0], -1).norm(dim=1).mean()
+
+mean = torch.tensor([0.485, 0.456, 0.406]).cuda().view(1,3,1,1)
+std = torch.tensor([0.229, 0.224, 0.225]).cuda().view(1,3,1,1)
+
 def pgd_attack(model,
                X,
                y,
@@ -14,6 +20,7 @@ def pgd_attack(model,
                criterion=nn.CrossEntropyLoss(),
                print_process=False,
                ):
+    X.mul_(std).add_(mean)
     if euclidean:
         l = len(X.shape) - 1
         rp = torch.randn_like(X)
@@ -52,4 +59,6 @@ def pgd_attack(model,
         X_pgd.requires_grad_()
         X_pgd.retain_grad()
 
+    X_pgd.requires_grad = False
+    X_pgd.sub_(mean).div_(std)
     return X_pgd
