@@ -172,12 +172,14 @@ def main():
                 source_state = source_state['model']
             target_state = OrderedDict()
             for k, v in source_state.items():
-                if k.startswith('module.attacker.model.'):
-                    k = k[len('module.attacker.model.'):]
+                #if k.startswith('module.attacker.model.'):
+                #    k = k[len('module.attacker.model.'):]
+                #else:
+                #    continue
                 if k[:7] != 'module.':
                     k = 'module.' + k
                 target_state[k] = v
-            model.load_state_dict(target_state, strict=False)
+            model.load_state_dict(target_state, strict=True)
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
