@@ -1,12 +1,10 @@
 import torch
 import torch.nn as nn
 
+from dataclasses import mean, std
 
-def vactor_norm(x):
+def vector_norm(x):
     return x.view(x.shape[0], -1).norm(dim=1).mean()
-
-mean = torch.tensor([0.485, 0.456, 0.406]).cuda().view(1,3,1,1)
-std = torch.tensor([0.229, 0.224, 0.225]).cuda().view(1,3,1,1)
 
 def pgd_attack(model,
                X,

@@ -5,6 +5,10 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
 
+mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).cuda().view(1,3,1,1)
+std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).cuda().view(1,3,1,1)
+
+
 def fast_collate(batch):
     imgs = [img[0] for img in batch]
     targets = torch.tensor([target[1] for target in batch], dtype=torch.int64)
@@ -24,9 +28,6 @@ def fast_collate(batch):
 
 class PrefetchedWrapper(object):
     def prefetched_loader(loader):
-        mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).cuda().view(1,3,1,1)
-        std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).cuda().view(1,3,1,1)
-
         stream = torch.cuda.Stream()
         first = True
 
