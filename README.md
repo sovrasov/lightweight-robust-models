@@ -1,7 +1,7 @@
 # Scripts for training adversarially robust classification models
 
-This set of scripts allows train and evaluate robust to PGD attack classification
-models on ImageNet dataset. Implementations of models are taken from the pytorchcv library,
+This set of scripts allows train and evaluate robust to [PGD](https://arxiv.org/abs/1706.06083) attack classification
+models on ImageNet dataset. Implementations of models are taken from the [pytorchcv](https://github.com/osmr/imgclsmob/tree/master/pytorch/pytorchcv) library,
 which means robust weights can be substituted to existing scripts that rely on pytorchcv.
 
 ## Trained models
