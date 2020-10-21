@@ -6,8 +6,8 @@ from .dataloaders import MEAN, STD
 def vector_norm(x):
     return x.view(x.shape[0], -1).norm(dim=1).mean()
 
-mean = torch.tensor(MEAN).cuda().view(1,3,1,1) / 255.
-std = torch.tensor(STD).cuda().view(1,3,1,1) / 255.
+mean = torch.tensor(MEAN).cuda().view(1,3,1,1)
+std = torch.tensor(STD).cuda().view(1,3,1,1)
 
 def pgd_attack(model,
                X,

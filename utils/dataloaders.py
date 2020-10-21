@@ -5,12 +5,15 @@ import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
 
-MEAN = [0.485 * 255, 0.456 * 255, 0.406 * 255]
-STD = [0.229 * 255, 0.224 * 255, 0.225 * 255]
+from PIL import Image
+from torch.utils.data import Dataset
+
+MEAN = [0.485, 0.456, 0.406]
+STD = [0.229, 0.224, 0.225]
 
 
-mean = torch.tensor(MEAN).cuda().view(1,3,1,1)
-std = torch.tensor(STD).cuda().view(1,3,1,1)
+mean = torch.tensor(MEAN).cuda().view(1,3,1,1) * 255
+std = torch.tensor(STD).cuda().view(1,3,1,1) * 255
 
 
 def fast_collate(batch):
@@ -66,14 +69,17 @@ class PrefetchedWrapper(object):
         self.epoch += 1
         return PrefetchedWrapper.prefetched_loader(self.dataloader)
 
-def get_pytorch_train_loader(data_path, batch_size, workers=5, _worker_init_fn=None, input_size=224):
+def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', workers=5, _worker_init_fn=None, input_size=224):
     traindir = os.path.join(data_path, 'train')
-    train_dataset = datasets.ImageFolder(
-            traindir,
-            transforms.Compose([
+    train_transform = transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
                 transforms.RandomHorizontalFlip(),
-                ]))
+                ])
+    train_dataset = datasets.ImageFolder(
+            traindir, train_transform)
+    if len(custom_oi_path):
+        root_dir = os.path.dirname(custom_oi_path)
+        train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, custom_oi_path, transform=train_transform))
 
     if torch.distributed.is_initialized():
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -107,3 +113,57 @@ def get_pytorch_val_loader(data_path, batch_size, workers=5, _worker_init_fn=Non
             collate_fn=fast_collate)
 
     return PrefetchedWrapper(val_loader), len(val_loader)
+
+
+from torch.utils.data import Dataset
+import json
+
+class CustomOI(Dataset):
+    def __init__(self, image_root_dir, dump_path, threshold=0.4, transform=None):
+        self.image_root_dir = image_root_dir
+        self.transform = transform
+        self.images_info = []
+        with open(dump_path, 'r') as f:
+            img_data = json.load(f)
+
+            for item in img_data:
+                name, label, conf = item
+                if conf > threshold:
+                    self.images_info.append((os.path.join(self.image_root_dir, name), label))
+
+
+    def __len__(self):
+        return len(self.images_info)
+
+    def __getitem__(self, idx):
+        try:
+            img = Image.open(self.images_info[idx][0])
+            label = self.images_info[idx][1]
+            if len(img.mode) != 3: # we need to convert gray and rgba images to rgb
+                rgbimg = Image.new('RGB', img.size)
+                rgbimg.paste(img)
+                img = rgbimg
+        except:
+            print('Unable to read the image: ' + self.images_info[idx][0])
+            img = torch.zeros((3, 224, 224))
+
+        if self.transform:
+            img = self.transform(img)
+        sample = (img, label)
+        return sample
+
+
+class JoinedDataset(Dataset):
+    def __init__(self, dataset1, dataset2):
+        self.dataset1 = dataset1
+        self.dataset2 = dataset2
+
+    def __len__(self):
+        return len(self.dataset1) + len(self.dataset2)
+
+    def __getitem__(self, idx):
+        if idx >= len(self.dataset1):
+            idx -= len(self.dataset1)
+            return self.dataset2[idx]
+        else:
+            return self.dataset1[idx]
