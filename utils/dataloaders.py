@@ -69,7 +69,7 @@ class PrefetchedWrapper(object):
         self.epoch += 1
         return PrefetchedWrapper.prefetched_loader(self.dataloader)
 
-def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', workers=5, _worker_init_fn=None, input_size=224):
+def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', oi_thresh=0.4, workers=5, _worker_init_fn=None, input_size=224):
     traindir = os.path.join(data_path, 'train')
     train_transform = transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
@@ -79,7 +79,8 @@ def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', workers=5
             traindir, train_transform)
     if len(custom_oi_path):
         root_dir = os.path.dirname(custom_oi_path)
-        train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, custom_oi_path, transform=train_transform))
+        train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, custom_oi_path, transform=train_transform, threshold=oi_thresh))
+        print(oi_thresh)
 
     if torch.distributed.is_initialized():
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
