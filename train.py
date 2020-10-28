@@ -29,6 +29,11 @@ parser.add_argument('-a', '--arch', metavar='ARCH', default='mobilenetv2_w1',
                     choices=_models.keys(),
                     help='model architecture: ' +
                         ' | '.join(_models.keys()))
+parser.add_argument('--arch-student', default='', type=str,
+                    choices=_models.keys(),
+                    help='model architecture: ' +
+                        ' | '.join(_models.keys()))
+
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -118,20 +123,23 @@ def main():
 
     # create model
     print("=> creating model '{}'".format(args.arch))
-    model = get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=1000)
+    models = [get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=1000, pretrained=False)]
+    if len(args.arch_student):
+        print("=> creating model '{}'".format(args.arch_student))
+        models.append(get_model(args.arch_student, in_size=(args.input_size, args.input_size), num_classes=1000, pretrained=False))
+
 
     if not args.distributed:
-            model = torch.nn.DataParallel(model).cuda()
+        models = [torch.nn.DataParallel(model).cuda() for model in models]
     else:
-        model.cuda()
-        model = torch.nn.parallel.DistributedDataParallel(model)
+        models = [torch.nn.parallel.DistributedDataParallel(model.cuda()) for model in models]
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    optimizers = [torch.optim.SGD(model.parameters(), args.lr,
+                                  momentum=args.momentum,
+                                  weight_decay=args.weight_decay) for model in models]
 
     # optionally resume from a checkpoint
     title = 'ImageNet-' + args.arch
@@ -144,8 +152,8 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
+            models[0].load_state_dict(checkpoint['state_dict'])
+            optimizers[0].load_state_dict(checkpoint['optimizer'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
             args.checkpoint = os.path.dirname(args.resume)
@@ -185,11 +193,11 @@ def main():
                 if k[:7] != 'module.':
                     k = 'module.' + k
                 target_state[k] = v
-            model.load_state_dict(target_state, strict=True)
+            models[0].load_state_dict(target_state, strict=True)
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps,
+        validate(val_loader, val_loader_len, models[0], criterion, adv_eps=args.adv_eps,
                  euclidean_adv=args.euclidean)
         return
 
@@ -203,22 +211,25 @@ def main():
         print(f'\nEpoch: [{epoch + 1} | {args.epochs}]')
 
         # train for one epoch
-        train_loss, train_acc = train(train_loader, train_loader_len, model, criterion, optimizer, epoch)
+        train_losses, train_accs = train(train_loader, train_loader_len, models, criterion, optimizers, epoch)
 
         # evaluate on validation set
         val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
-                                                                model, criterion, adv_eps=args.adv_eps,
+                                                                models[0], criterion, adv_eps=args.adv_eps,
                                                                 euclidean_adv=args.euclidean)
 
-        lr = optimizer.param_groups[0]['lr']
+        lr = optimizers[0].param_groups[0]['lr']
 
         # append logger file
-        logger.append([lr, train_loss, val_loss, train_acc, prec1])
+        logger.append([lr, train_losses[0], val_loss, train_accs[0], prec1])
 
         # tensorboardX
         writer.add_scalar('learning rate', lr, epoch + 1)
-        writer.add_scalars('loss', {'train loss': train_loss, 'validation loss': val_loss}, epoch + 1)
-        writer.add_scalars('accuracy', {'train accuracy': train_acc, 'validation accuracy': prec1}, epoch + 1)
+        writer.add_scalars('loss', {'train loss': train_losses[0], 'validation loss': val_loss}, epoch + 1)
+        writer.add_scalars('accuracy', {'train accuracy': train_accs[0], 'validation accuracy': prec1}, epoch + 1)
+
+        writer.add_scalars('loss_aux', {'train loss': train_losses[1], 'validation loss': val_loss}, epoch + 1)
+        writer.add_scalars('accuracy_aux', {'train accuracy': train_accs[1], 'validation accuracy': prec1}, epoch + 1)
         print(f'Val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
         is_best = prec1 > best_prec1
@@ -226,10 +237,16 @@ def main():
         save_checkpoint({
             'epoch': epoch + 1,
             'arch': args.arch,
-            'state_dict': model.state_dict(),
+            'state_dict': models[0].state_dict(),
             'best_prec1': best_prec1,
-            'optimizer' : optimizer.state_dict(),
+            'optimizer' : optimizers[0].state_dict(),
         }, is_best, checkpoint=args.checkpoint)
+
+        if (i + 1) % 10 == 0:
+            val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
+                                                                    models[1], criterion, adv_eps=args.adv_eps,
+                                                                    euclidean_adv=args.euclidean)
+            print(f'Additional model val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
     logger.close()
     logger.plot()
@@ -239,22 +256,30 @@ def main():
     print('Best accuracy:')
     print(best_prec1)
 
+def kl_div(input, target):
+    return nn.functional.kl_div(nn.functional.log_softmax(input, dim=1),
+                                nn.functional.softmax(target.detach(), dim=1), reduction='batchmean')
+    #t_sm = nn.functional.softmax(target.detach(), dim=1)
+    #i_sm = nn.functional.softmax(input, dim=1)
+    #return torch.sum(t_sm*torch.log(t_sm / (i_sm + eps) + eps), dim=1).mean()
 
-def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
+def train(train_loader, train_loader_len, models, criterion, optimizers, epoch):
     bar = Bar('Processing', max=train_loader_len)
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
-    top1 = AverageMeter()
-    top5 = AverageMeter()
+    avg_losses = [AverageMeter() for _ in models]
+    top1_all = [AverageMeter() for _ in models]
+    top5_all = [AverageMeter() for _ in models]
 
     # switch to train mode
-    model.train()
+    for model in models:
+        model.train()
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
-        adjust_learning_rate(optimizer, epoch, i, train_loader_len)
+        for optimizer in optimizers:
+            adjust_learning_rate(optimizer, epoch, i, train_loader_len)
 
         # measure data loading time
         data_time.update(time.time() - end)
@@ -262,27 +287,37 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
         target = target.cuda(non_blocking=True)
 
         # compute output
-        if args.adv_eps > 0.:
-            model.eval()
-            adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps, euclidean=args.euclidean,
-                                  step_size=2./3.*args.adv_eps, criterion=criterion)
-            model.train()
-            output = model(adv_data)
-        else:
-            output = model(input)
+        outputs = []
+        for model in models:
+            if args.adv_eps > 0.:
+                model.eval()
+                adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps, euclidean=args.euclidean,
+                                    step_size=2./3.*args.adv_eps, criterion=criterion)
+                model.train()
+                outputs.append(model(adv_data))
+            else:
+                outputs.append(model(input))
 
-        loss = criterion(output, target)
+        losses = [criterion(output, target) for output in outputs]
+
+        if len(models) > 1:
+            losses[0] += kl_div(outputs[0], outputs[1])
+            losses[1] += kl_div(outputs[1], outputs[0])
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output, target, topk=(1, 5))
-        losses.update(loss.item(), input.size(0))
-        top1.update(prec1.item(), input.size(0))
-        top5.update(prec5.item(), input.size(0))
+        for i, output in enumerate(outputs):
+            prec1, prec5 = accuracy(output, target, topk=(1, 5))
+            avg_losses[i].update(losses[i].item(), input.size(0))
+            top1_all[i].update(prec1.item(), input.size(0))
+            top5_all[i].update(prec5.item(), input.size(0))
 
         # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        for optimizer in optimizers:
+            optimizer.zero_grad()
+        for loss in losses:
+            loss.backward()
+        for optimizer in optimizers:
+            optimizer.step()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -296,13 +331,13 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
                     bt=batch_time.avg,
                     total=bar.elapsed_td,
                     eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
+                    loss=avg_losses[0].avg,
+                    top1=top1_all[0].avg,
+                    top5=top5_all[0].avg,
                     )
         bar.next()
     bar.finish()
-    return (losses.avg, top1.avg)
+    return ([loss.avg for loss in avg_losses], [top1.avg for top1 in top1_all])
 
 
 def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0, euclidean_adv=False):

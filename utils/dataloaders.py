@@ -80,7 +80,6 @@ def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', oi_thresh
     if len(custom_oi_path):
         root_dir = os.path.dirname(custom_oi_path)
         train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, custom_oi_path, transform=train_transform, threshold=oi_thresh))
-        print(oi_thresh)
 
     if torch.distributed.is_initialized():
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
