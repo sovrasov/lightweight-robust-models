@@ -242,7 +242,7 @@ def main():
             'optimizer' : optimizers[0].state_dict(),
         }, is_best, checkpoint=args.checkpoint)
 
-        if (i + 1) % 10 == 0:
+        if (epoch + 1) % 10 == 0:
             val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
                                                                     models[1], criterion, adv_eps=args.adv_eps,
                                                                     euclidean_adv=args.euclidean)
