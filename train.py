@@ -229,12 +229,15 @@ def main():
 
         # tensorboardX
         writer.add_scalar('learning rate', lr, epoch + 1)
-        writer.add_scalars('loss', {'train loss': train_losses[0], 'validation loss': val_loss}, epoch + 1)
-        writer.add_scalars('accuracy', {'train accuracy': train_accs[0], 'validation accuracy': prec1}, epoch + 1)
+        writer.add_scalar('loss/train', train_losses[0], epoch + 1)
+        writer.add_scalar('loss/validation', val_loss, epoch + 1)
+        writer.add_scalar('accuracy/train', train_accs[0], epoch + 1)
+        writer.add_scalar('accuracy/validataion', prec1, epoch + 1)
+        writer.add_scalar('accuracy/validataion_adv', adv_prec1, epoch + 1)
 
         if len(train_losses) > 1:
-            writer.add_scalars('loss_aux', {'train loss': train_losses[1], 'validation loss': val_loss}, epoch + 1)
-            writer.add_scalars('accuracy_aux', {'train accuracy': train_accs[1], 'validation accuracy': prec1}, epoch + 1)
+            writer.add_scalar('loss_aux/train', train_losses[1], epoch + 1)
+            writer.add_scalar('accuracy_aux/train', train_accs[1], epoch + 1)
         print(f'Val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
         is_best = prec1 > best_prec1
@@ -251,6 +254,8 @@ def main():
             val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
                                                                     models[1], criterion, adv_eps=args.adv_eps,
                                                                     euclidean_adv=args.euclidean)
+            writer.add_scalar('accuracy_aux/validataion', prec1, epoch + 1)
+            writer.add_scalar('accuracy_aux/validataion_adv', adv_prec1, epoch + 1)
             print(f'Additional model val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
     logger.close()
