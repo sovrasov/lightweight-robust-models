@@ -231,7 +231,7 @@ def main():
         if len(train_losses) > 1:
             writer.add_scalars('loss_aux', {'train loss': train_losses[1], 'validation loss': val_loss}, epoch + 1)
             writer.add_scalars('accuracy_aux', {'train accuracy': train_accs[1], 'validation accuracy': prec1}, epoch + 1)
-            print(f'Val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
+        print(f'Val results: {prec1:.2f} ; {prec5:.2f} ; {adv_prec1:.2f} ; {adv_prec5:.2f}')
 
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
