@@ -20,6 +20,7 @@ from utils.dataloaders import get_pytorch_train_loader, get_pytorch_val_loader
 from tensorboardX import SummaryWriter
 
 from utils.pgd import pgd_attack
+from utils.regularizers import LinDLReg
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -52,6 +53,8 @@ parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
 parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)',
                     dest='weight_decay')
+parser.add_argument('--lin-reg', default=0., type=float,
+                    help='lin regulazrization coefficient (default: 1e-4)')
 parser.add_argument('-p', '--print-freq', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -138,6 +141,7 @@ def main():
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
+    reg_criterion = LinDLReg(args.lin_reg).cuda() if args.lin_reg > 0 else lambda _: 0.
 
     optimizers = [torch.optim.SGD(model.parameters(), args.lr,
                                   momentum=args.momentum,
@@ -211,7 +215,7 @@ def main():
         print(f'\nEpoch: [{epoch + 1} | {args.epochs}]')
 
         # train for one epoch
-        train_losses, train_accs = train(train_loader, train_loader_len, models, criterion, optimizers, epoch)
+        train_losses, train_accs = train(train_loader, train_loader_len, models, criterion, optimizers, epoch, reg_criterion)
 
         # evaluate on validation set
         val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
@@ -264,7 +268,7 @@ def kl_div(input, target):
     #i_sm = nn.functional.softmax(input, dim=1)
     #return torch.sum(t_sm*torch.log(t_sm / (i_sm + eps) + eps), dim=1).mean()
 
-def train(train_loader, train_loader_len, models, criterion, optimizers, epoch):
+def train(train_loader, train_loader_len, models, criterion, optimizers, epoch, reg_criterion=lambda _: 0.):
     bar = Bar('Processing', max=train_loader_len)
 
     batch_time = AverageMeter()
@@ -293,13 +297,13 @@ def train(train_loader, train_loader_len, models, criterion, optimizers, epoch):
             if args.adv_eps > 0.:
                 model.eval()
                 adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps, euclidean=args.euclidean,
-                                    step_size=2./3.*args.adv_eps, criterion=criterion)
+                                      step_size=2./3.*args.adv_eps, criterion=criterion)
                 model.train()
                 outputs.append(model(adv_data))
             else:
                 outputs.append(model(input))
 
-        losses = [criterion(output, target) for output in outputs]
+        losses = [criterion(output, target) + reg_criterion(input, output) for output in outputs]
 
         if len(models) > 1:
             losses[0] += kl_div(outputs[0], outputs[1])
