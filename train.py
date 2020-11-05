@@ -121,12 +121,14 @@ def main():
         dist.init_process_group(backend=args.dist_backend, init_method=args.dist_url,
                                 world_size=args.world_size)
 
+    num_classes = len([d.name for d in os.scandir(os.path.join(args.data, 'train')) if d.is_dir()])
+
     # create model
     print("=> creating model '{}'".format(args.arch))
-    models = [get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=1000, pretrained=False)]
+    models = [get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=num_classes, pretrained=False)]
     if len(args.arch_student):
         print("=> creating model '{}'".format(args.arch_student))
-        models.append(get_model(args.arch_student, in_size=(args.input_size, args.input_size), num_classes=1000, pretrained=False))
+        models.append(get_model(args.arch_student, in_size=(args.input_size, args.input_size), num_classes=num_classes, pretrained=False))
 
 
     if not args.distributed:
@@ -167,13 +169,11 @@ def main():
 
     cudnn.benchmark = True
 
-    get_train_loader = get_pytorch_train_loader
-    get_val_loader = get_pytorch_val_loader
-
-    train_loader, train_loader_len = get_train_loader(args.data, args.batch_size,
-                                                      custom_oi_path=args.oi_list, oi_thresh=args.oi_thresh, workers=args.workers,
-                                                      input_size=args.input_size)
-    val_loader, val_loader_len = get_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
+    train_loader, train_loader_len = get_pytorch_train_loader(args.data, args.batch_size,
+                                                              custom_oi_path=args.oi_list,
+                                                              oi_thresh=args.oi_thresh, workers=args.workers,
+                                                              input_size=args.input_size)
+    val_loader, val_loader_len = get_pytorch_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
 
     if args.evaluate:
         from collections import OrderedDict
