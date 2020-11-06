@@ -15,7 +15,11 @@ class LinDLReg(nn.Module):
             x_ext[:, : x.size(1)] = x
             x_ext_t = torch.transpose(x_ext, 0, 1)
             target = target.view(target.size(0), -1)
-            z = torch.matmul(torch.matmul(x_ext_t, torch.inverse(torch.matmul(x_ext, x_ext_t))),
-                             target)
+            try:
+                z = torch.matmul(torch.matmul(x_ext_t, torch.inverse(torch.matmul(x_ext, x_ext_t))),
+                                 target)
+            except:
+                print('LenDLReg: X is not a full rank matrix')
+                return 0.
 
         return self.gamma * torch.norm(torch.matmul(x_ext, z) - target)
