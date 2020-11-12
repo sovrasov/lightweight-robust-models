@@ -23,4 +23,4 @@ class LinDLReg(nn.Module):
                 print('LenDLReg: X is not a full rank matrix')
                 return 0.
 
-        return self.gamma * torch.norm(torch.matmul(x_ext, z) - target).clamp_max_(self.max_value)
+        return self.gamma * torch.clamp(torch.norm(torch.matmul(x_ext, z) - target), max=self.max_value)
