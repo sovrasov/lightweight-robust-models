@@ -141,7 +141,7 @@ def main():
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
-    reg_criterion = LinDLReg(args.lin_reg).cuda() if args.lin_reg > 0 else lambda _: 0.
+    reg_criterion = LinDLReg(args.lin_reg).cuda()
 
     optimizers = [torch.optim.SGD(model.parameters(), args.lr,
                                   momentum=args.momentum,
@@ -273,7 +273,7 @@ def kl_div(input, target):
     #i_sm = nn.functional.softmax(input, dim=1)
     #return torch.sum(t_sm*torch.log(t_sm / (i_sm + eps) + eps), dim=1).mean()
 
-def train(train_loader, train_loader_len, models, criterion, optimizers, epoch, reg_criterion=lambda _: 0.):
+def train(train_loader, train_loader_len, models, criterion, optimizers, epoch, reg_criterion=lambda *_: 0.):
     bar = Bar('Processing', max=train_loader_len)
 
     batch_time = AverageMeter()

@@ -10,6 +10,9 @@ class LinDLReg(nn.Module):
         self.max_value = max_value
 
     def forward(self, x, target=None):
+        if self.gamma == 0:
+            return 0.
+
         with torch.no_grad():
             x = x.view(x.size(0), -1)
             x_ext = torch.ones((x.size(0), x.size(1) + 1)).to(x.device)
