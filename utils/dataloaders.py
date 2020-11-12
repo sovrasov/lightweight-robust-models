@@ -20,7 +20,7 @@ def fast_collate(batch):
     imgs = []
     targets = []
     for img, target in batch:
-        if target < 0:
+        if target == -1:
             imgs.append(img[0])
             imgs.append(img[1])
             targets.append(target)
@@ -81,7 +81,7 @@ class PrefetchedWrapper(object):
         self.epoch += 1
         return PrefetchedWrapper.prefetched_loader(self.dataloader)
 
-def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', oi_thresh=0.4, workers=5, _worker_init_fn=None, input_size=224):
+def get_pytorch_train_loader(data_path, batch_size, custom_oi_kwargs={}, workers=5, _worker_init_fn=None, input_size=224):
     traindir = os.path.join(data_path, 'train')
     train_transform = transforms.Compose([
                 transforms.RandomResizedCrop(input_size),
@@ -89,9 +89,10 @@ def get_pytorch_train_loader(data_path, batch_size, custom_oi_path='', oi_thresh
                 ])
     train_dataset = datasets.ImageFolder(
             traindir, train_transform)
-    if len(custom_oi_path):
-        root_dir = os.path.dirname(custom_oi_path)
-        train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, custom_oi_path, transform=train_transform, threshold=oi_thresh))
+    if len(custom_oi_kwargs) and len(custom_oi_kwargs['dump_path']):
+        root_dir = os.path.dirname(custom_oi_kwargs['dump_path'])
+        custom_oi_kwargs['transform'] = train_transform
+        train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, **custom_oi_kwargs))
 
     if torch.distributed.is_initialized():
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
@@ -131,19 +132,24 @@ from torch.utils.data import Dataset
 import json
 
 class CustomOI(Dataset):
+    AUGMENTED_NO_LABEL = -1
+    NO_LABEL = -2
     def __init__(self, image_root_dir, dump_path, threshold=0.4, unsupervised=False, transform=None, hard_transform=None):
         self.image_root_dir = image_root_dir
         self.transform = transform
         self.images_info = []
         self.hard_transform = hard_transform
+        self.unsupervised = unsupervised
         with open(dump_path, 'r') as f:
             img_data = json.load(f)
 
             for item in img_data:
                 name, label, conf = item
                 if unsupervised:
-                    self.images_info.append((os.path.join(self.image_root_dir, name), -1))
+                    label = CustomOI.AUGMENTED_NO_LABEL if self.hard_transform else CustomOI.NO_LABEL
+                    self.images_info.append((os.path.join(self.image_root_dir, name), label))
                     continue
+
                 if conf > threshold:
                     self.images_info.append((os.path.join(self.image_root_dir, name), label))
 
@@ -168,9 +174,10 @@ class CustomOI(Dataset):
 
         sample = (img, label)
 
-        if self.hard_transform:
-            img_hard = self.hard_transform(img)
-            sample = ((img, img_hard), label)
+        if self.unsupervised:
+            if self.hard_transform:
+                img_hard = self.hard_transform(img)
+                sample = ((img, img_hard), label)
 
         return sample
 

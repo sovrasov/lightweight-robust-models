@@ -2,14 +2,30 @@ import torch
 import torch.nn.functional as F
 
 
-def fix_match_loss(logits, target):
-    supervised_idx = target >= 0
+class FixMatchLoss(torch.nn.Module):
+    # https://arxiv.org/pdf/2001.07685v1.pdf
+    def __init__(self, T=1.0, p_cutoff=0.9, use_hard_labels=True, lambd=1.0):
+        super().__init__()
+        self.temp = T
+        self.p_c = p_cutoff
+        self.use_hard_labels = use_hard_labels
+        self.lambd = lambd
 
-    unsupervised_logits = logits[target < 0]
-    pass
+    def forward(self, logits, target):
+        unsupervised_logits = logits[target < 0]
+        if unsupervised_logits.shape[0] > 0:
+            unsupervised_loss, _ = consistency_loss(unsupervised_logits, unsupervised_logits,
+                                                    self.temp, self.p_c, self.use_hard_labels)
+        else:
+            unsupervised_loss = 0
 
+        supervised_idx = target >= 0
+        if supervised_idx.shape[0] > 0:
+            supervised_loss = ce_loss(logits[supervised_idx], target[supervised_idx], reduction='mean')
+        else:
+            supervised_loss = 0.
 
-    return ce_loss(logits[supervised_idx], target[supervised_idx])
+        return supervised_loss + self.lambd * unsupervised_loss
 
 
 def ce_loss(logits, targets, use_hard_labels=True, reduction='none'):
@@ -26,7 +42,7 @@ def consistency_loss(logits_w, logits_s, T=1.0, p_cutoff=0.0, use_hard_labels=Tr
     logits_w = logits_w.detach()
 
     pseudo_label = torch.softmax(logits_w, dim=-1)
-    _, max_idx = torch.max(pseudo_label, dim=-1)
+    max_probs, max_idx = torch.max(pseudo_label, dim=-1)
     mask = max_probs.ge(p_cutoff).float()
 
     if use_hard_labels:

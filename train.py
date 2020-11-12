@@ -21,6 +21,7 @@ from tensorboardX import SummaryWriter
 
 from utils.pgd import pgd_attack
 from utils.regularizers import LinDLReg
+from utils.semi_supervised import FixMatchLoss
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -141,7 +142,13 @@ def main():
         models = [torch.nn.parallel.DistributedDataParallel(model.cuda()) for model in models]
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
+    if args.semi_supervised:
+        criterion = FixMatchLoss(p_cutoff=args.oi_thresh).cuda()
+        val_criterion = nn.CrossEntropyLoss().cuda()
+    else:
+        criterion = nn.CrossEntropyLoss().cuda()
+        val_criterion = criterion
+
     reg_criterion = LinDLReg(args.lin_reg).cuda()
 
     optimizers = [torch.optim.SGD(model.parameters(), args.lr,
@@ -175,11 +182,13 @@ def main():
     cudnn.benchmark = True
 
     train_loader, train_loader_len = get_pytorch_train_loader(args.data, args.batch_size,
-                                                              custom_oi_path=args.oi_list,
-                                                              oi_thresh=args.oi_thresh, workers=args.workers,
+                                                              workers=args.workers,
                                                               input_size=args.input_size,
-                                                              #unsupervised=args.semi_supervised
-                                                              )
+                                                              custom_oi_kwargs = {
+                                                                'threshold' : args.oi_thresh,
+                                                                'dump_path' : args.oi_list,
+                                                                'unsupervised' : args.semi_supervised
+                                                              })
     val_loader, val_loader_len = get_pytorch_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
 
     if args.evaluate:
@@ -204,7 +213,7 @@ def main():
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        validate(val_loader, val_loader_len, models[0], criterion, adv_eps=args.adv_eps,
+        validate(val_loader, val_loader_len, models[0], val_criterion, adv_eps=args.adv_eps,
                  euclidean_adv=args.euclidean)
         return
 
@@ -222,7 +231,7 @@ def main():
 
         # evaluate on validation set
         val_loss, prec1, prec5, adv_prec1, adv_prec5 = validate(val_loader, val_loader_len,
-                                                                models[0], criterion, adv_eps=args.adv_eps,
+                                                                models[0], val_criterion, adv_eps=args.adv_eps,
                                                                 euclidean_adv=args.euclidean)
 
         lr = optimizers[0].param_groups[0]['lr']
