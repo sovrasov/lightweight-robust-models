@@ -4,9 +4,10 @@ import torch.nn as nn
 
 class LinDLReg(nn.Module):
     # Implementation of https://arxiv.org/pdf/2011.00368.pdf
-    def __init__(self, gamma):
+    def __init__(self, gamma, max_value=10.):
         super().__init__()
         self.gamma = gamma
+        self.max_value = max_value
 
     def forward(self, x, target=None):
         with torch.no_grad():
@@ -22,4 +23,4 @@ class LinDLReg(nn.Module):
                 print('LenDLReg: X is not a full rank matrix')
                 return 0.
 
-        return self.gamma * torch.norm(torch.matmul(x_ext, z) - target)
+        return self.gamma * torch.norm(torch.matmul(x_ext, z) - target).clamp_max_(self.max_value)
