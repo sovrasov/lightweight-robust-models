@@ -14,14 +14,18 @@ class FixMatchLoss(torch.nn.Module):
     def forward(self, logits, target):
         unsupervised_logits = logits[target < 0]
         if unsupervised_logits.shape[0] > 0:
-            unsupervised_loss, _ = consistency_loss(unsupervised_logits, unsupervised_logits,
+            assert unsupervised_logits.shape[0] % 2 == 0
+            logits_w = unsupervised_logits[0::2]
+            logits_s = unsupervised_logits[1::2]
+            unsupervised_loss, _ = consistency_loss(logits_w, logits_s,
                                                     self.temp, self.p_c, self.use_hard_labels)
         else:
             unsupervised_loss = 0
 
         supervised_idx = target >= 0
-        if supervised_idx.shape[0] > 0:
-            supervised_loss = ce_loss(logits[supervised_idx], target[supervised_idx], reduction='mean')
+        supervised_logits = logits[supervised_idx]
+        if supervised_logits.shape[0] > 0:
+            supervised_loss = ce_loss(supervised_logits, target[supervised_idx], reduction='mean')
         else:
             supervised_loss = 0.
 

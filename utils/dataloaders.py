@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 
 from PIL import Image
 from torch.utils.data import Dataset
+from .randaugment import RandAugment
 
 MEAN = [0.485, 0.456, 0.406]
 STD = [0.229, 0.224, 0.225]
@@ -92,6 +93,11 @@ def get_pytorch_train_loader(data_path, batch_size, custom_oi_kwargs={}, workers
     if len(custom_oi_kwargs) and len(custom_oi_kwargs['dump_path']):
         root_dir = os.path.dirname(custom_oi_kwargs['dump_path'])
         custom_oi_kwargs['transform'] = train_transform
+        custom_oi_kwargs['hard_transform'] = transforms.Compose([
+                                                transforms.RandomResizedCrop(input_size),
+                                                RandAugment(3,5),
+                                                transforms.RandomHorizontalFlip(),
+                                                ])
         train_dataset = JoinedDataset(train_dataset, CustomOI(root_dir, **custom_oi_kwargs))
 
     if torch.distributed.is_initialized():
@@ -145,14 +151,14 @@ class CustomOI(Dataset):
 
             for item in img_data:
                 name, label, conf = item
-                if unsupervised:
+                if unsupervised and conf > 0.5: # anyway we have to cut off thrash here
                     label = CustomOI.AUGMENTED_NO_LABEL if self.hard_transform else CustomOI.NO_LABEL
                     self.images_info.append((os.path.join(self.image_root_dir, name), label))
                     continue
 
                 if conf > threshold:
                     self.images_info.append((os.path.join(self.image_root_dir, name), label))
-
+        print(f'Number of images in OI: {len(self.images_info)}' )
 
     def __len__(self):
         return len(self.images_info)
