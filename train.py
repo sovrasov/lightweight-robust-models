@@ -94,6 +94,7 @@ parser.add_argument('-c', '--checkpoint', default='checkpoints', type=str, metav
 parser.add_argument('--oi-list', type=str, default='',
                     help='path to a custom list with OI images')
 parser.add_argument('--oi-thresh', type=float, default=0.4)
+parser.add_argument('--semi-supervised', action='store_true')
 
 parser.add_argument('--width-mult', type=float, default=1.0, help='MobileNet model width multiplier.')
 parser.add_argument('--input-size', type=int, default=224, help='MobileNet model input resolution')
@@ -176,7 +177,9 @@ def main():
     train_loader, train_loader_len = get_pytorch_train_loader(args.data, args.batch_size,
                                                               custom_oi_path=args.oi_list,
                                                               oi_thresh=args.oi_thresh, workers=args.workers,
-                                                              input_size=args.input_size)
+                                                              input_size=args.input_size,
+                                                              #unsupervised=args.semi_supervised
+                                                              )
     val_loader, val_loader_len = get_pytorch_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
 
     if args.evaluate:

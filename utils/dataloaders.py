@@ -17,11 +17,23 @@ std = torch.tensor(STD).cuda().view(1,3,1,1) * 255
 
 
 def fast_collate(batch):
-    imgs = [img[0] for img in batch]
-    targets = torch.tensor([target[1] for target in batch], dtype=torch.int64)
+    imgs = []
+    targets = []
+    for img, target in batch:
+        if target < 0:
+            imgs.append(img[0])
+            imgs.append(img[1])
+            targets.append(target)
+            targets.append(target)
+        else:
+            imgs.append(img)
+            targets.append(target)
+    #imgs = [img[0] for img in batch]
+    #targets = torch.tensor([target[1] for target in batch], dtype=torch.int64)
+    targets = torch.tensor(targets, dtype=torch.int64)
     w = imgs[0].size[0]
     h = imgs[0].size[1]
-    tensor = torch.zeros( (len(imgs), 3, h, w), dtype=torch.uint8 )
+    tensor = torch.zeros((len(imgs), 3, h, w), dtype=torch.uint8)
     for i, img in enumerate(imgs):
         nump_array = np.asarray(img, dtype=np.uint8)
         if(nump_array.ndim < 3):
@@ -119,15 +131,19 @@ from torch.utils.data import Dataset
 import json
 
 class CustomOI(Dataset):
-    def __init__(self, image_root_dir, dump_path, threshold=0.4, transform=None):
+    def __init__(self, image_root_dir, dump_path, threshold=0.4, unsupervised=False, transform=None, hard_transform=None):
         self.image_root_dir = image_root_dir
         self.transform = transform
         self.images_info = []
+        self.hard_transform = hard_transform
         with open(dump_path, 'r') as f:
             img_data = json.load(f)
 
             for item in img_data:
                 name, label, conf = item
+                if unsupervised:
+                    self.images_info.append((os.path.join(self.image_root_dir, name), -1))
+                    continue
                 if conf > threshold:
                     self.images_info.append((os.path.join(self.image_root_dir, name), label))
 
@@ -149,7 +165,13 @@ class CustomOI(Dataset):
 
         if self.transform:
             img = self.transform(img)
+
         sample = (img, label)
+
+        if self.hard_transform:
+            img_hard = self.hard_transform(img)
+            sample = ((img, img_hard), label)
+
         return sample
 
 
