@@ -328,7 +328,8 @@ def train(train_loader, train_loader_len, models, criterion, optimizers, epoch, 
 
         # measure accuracy and record loss
         for i, output in enumerate(outputs):
-            prec1, prec5 = accuracy(output, target, topk=(1, 5))
+            labeled_samples_idx = target >= 0
+            prec1, prec5 = accuracy(output[labeled_samples_idx], target[labeled_samples_idx], topk=(1, 5))
             avg_losses[i].update(losses[i].item(), input.size(0))
             top1_all[i].update(prec1.item(), input.size(0))
             top5_all[i].update(prec5.item(), input.size(0))
