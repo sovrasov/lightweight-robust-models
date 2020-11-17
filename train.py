@@ -96,6 +96,7 @@ parser.add_argument('--oi-list', type=str, default='',
                     help='path to a custom list with OI images')
 parser.add_argument('--oi-thresh', type=float, default=0.4)
 parser.add_argument('--semi-supervised', action='store_true')
+parser.add_argument('--pseudo-label-thresh', type=float, default=0.9)
 parser.add_argument('--unsupervised', action='store_true')
 
 parser.add_argument('--width-mult', type=float, default=1.0, help='MobileNet model width multiplier.')
@@ -144,7 +145,7 @@ def main():
 
     # define loss function (criterion) and optimizer
     if args.semi_supervised:
-        criterion = FixMatchLoss(p_cutoff=args.oi_thresh).cuda()
+        criterion = FixMatchLoss(p_cutoff=args.pseudo_label_thresh).cuda()
         val_criterion = nn.CrossEntropyLoss().cuda()
     elif args.unsupervised:
         criterion = InfoNCELoss().cuda()

@@ -170,7 +170,7 @@ class CustomOI(Dataset):
 
             for item in img_data:
                 name, label, conf = item
-                if unsupervised and conf > 0.5: # anyway we have to cut off thrash here
+                if unsupervised and conf > threshold:
                     label = CustomOI.AUGMENTED_NO_LABEL if self.hard_transform else CustomOI.NO_LABEL
                     self.images_info.append((os.path.join(self.image_root_dir, name), label))
                     continue
