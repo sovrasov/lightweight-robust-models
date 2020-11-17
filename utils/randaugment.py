@@ -161,10 +161,11 @@ def augment_list():
 
 
 class RandAugment:
-    def __init__(self, n, m):
+    def __init__(self, n, m, cutout=True):
         self.n = n
         self.m = m      # [0, 30] in fixmatch, deprecated.
         self.augment_list = augment_list()
+        self.cutout = cutout
 
 
     def __call__(self, img):
@@ -172,8 +173,9 @@ class RandAugment:
         for op, min_val, max_val in ops:
             val = min_val + float(max_val - min_val)*random.random()
             img = op(img, val)
-        cutout_val = random.random() * 0.5
-        img = Cutout(img, cutout_val) #for fixmatch
+        if self.cutout:
+            cutout_val = random.random() * 0.5
+            img = Cutout(img, cutout_val) #for fixmatch
         return img
 
 

@@ -1,7 +1,6 @@
 import argparse
 import os
 import random
-import shutil
 import time
 import warnings
 
@@ -15,13 +14,14 @@ import torch.utils.data
 import torch.utils.data.distributed
 from pytorchcv.model_provider import get_model, _models
 
-from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
+from utils import (Bar, Logger, AverageMeter, accuracy, mkdir_p,
+                   savefig, save_checkpoint, load_weights)
 from utils.dataloaders import get_pytorch_train_loader, get_pytorch_val_loader
 from tensorboardX import SummaryWriter
 
 from utils.pgd import pgd_attack
 from utils.regularizers import LinDLReg
-from utils.semi_supervised import FixMatchLoss
+from utils.semi_supervised import FixMatchLoss, InfoNCELoss
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -96,6 +96,7 @@ parser.add_argument('--oi-list', type=str, default='',
                     help='path to a custom list with OI images')
 parser.add_argument('--oi-thresh', type=float, default=0.4)
 parser.add_argument('--semi-supervised', action='store_true')
+parser.add_argument('--unsupervised', action='store_true')
 
 parser.add_argument('--width-mult', type=float, default=1.0, help='MobileNet model width multiplier.')
 parser.add_argument('--input-size', type=int, default=224, help='MobileNet model input resolution')
@@ -145,6 +146,9 @@ def main():
     if args.semi_supervised:
         criterion = FixMatchLoss(p_cutoff=args.oi_thresh).cuda()
         val_criterion = nn.CrossEntropyLoss().cuda()
+    elif args.unsupervised:
+        criterion = InfoNCELoss().cuda()
+        val_criterion = None
     else:
         criterion = nn.CrossEntropyLoss().cuda()
         val_criterion = criterion
@@ -178,41 +182,20 @@ def main():
         logger = Logger(os.path.join(args.checkpoint, 'log.txt'), title=title)
         logger.set_names(['Learning Rate', 'Train Loss', 'Valid Loss', 'Train Acc.', 'Valid Acc.'])
 
-
     cudnn.benchmark = True
-
     train_loader, train_loader_len = get_pytorch_train_loader(args.data, args.batch_size,
                                                               workers=args.workers,
                                                               input_size=args.input_size,
                                                               custom_oi_kwargs = {
                                                                 'threshold' : args.oi_thresh,
                                                                 'dump_path' : args.oi_list,
-                                                                'unsupervised' : args.semi_supervised
-                                                              })
+                                                                'unsupervised' : args.semi_supervised or args.unsupervised
+                                                              },
+                                                              unsupervised=args.unsupervised)
     val_loader, val_loader_len = get_pytorch_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
 
     if args.evaluate:
-        from collections import OrderedDict
-        if os.path.isfile(args.weight):
-            print("=> loading pretrained weight '{}'".format(args.weight))
-            source_state = torch.load(args.weight)
-            if 'state_dict' in source_state:
-                source_state = source_state['state_dict']
-            if 'model' in source_state:
-                source_state = source_state['model']
-            target_state = OrderedDict()
-            for k, v in source_state.items():
-                #if k.startswith('module.attacker.model.'):
-                #    k = k[len('module.attacker.model.'):]
-                #else:
-                #    continue
-                if k[:7] != 'module.':
-                    k = 'module.' + k
-                target_state[k] = v
-            models[0].load_state_dict(target_state, strict=True)
-        else:
-            print("=> no weight found at '{}'".format(args.weight))
-
+        load_weights(args.weight, models[0])
         validate(val_loader, val_loader_len, models[0], val_criterion, adv_eps=args.adv_eps,
                  euclidean_adv=args.euclidean)
         return
@@ -364,6 +347,9 @@ def train(train_loader, train_loader_len, models, criterion, optimizers, epoch, 
 
 
 def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0, euclidean_adv=False):
+    if criterion is None:
+        return (0., 0., 0., 0., 0.)
+
     bar = Bar('Processing', max=val_loader_len)
 
     batch_time = AverageMeter()
@@ -426,13 +412,6 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0, euclidea
         bar.next()
     bar.finish()
     return (losses.avg, top1.avg, top5.avg, adv_top1.avg, adv_top5.avg)
-
-
-def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
-    filepath = os.path.join(checkpoint, filename)
-    torch.save(state, filepath)
-    if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
 
 
 from math import cos, pi

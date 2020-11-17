@@ -8,12 +8,12 @@ import os
 import sys
 import time
 import math
+import shutil
+from collections import OrderedDict
 
+import torch
 import torch.nn as nn
 import torch.nn.init as init
-from torch.autograd import Variable
-
-__all__ = ['get_mean_and_std', 'init_params', 'mkdir_p', 'AverageMeter']
 
 
 def get_mean_and_std(dataset):
@@ -30,6 +30,36 @@ def get_mean_and_std(dataset):
     mean.div_(len(dataset))
     std.div_(len(dataset))
     return mean, std
+
+
+def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pth.tar'):
+    filepath = os.path.join(checkpoint, filename)
+    torch.save(state, filepath)
+    if is_best:
+        shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pth.tar'))
+
+
+def load_weights(weights_path, model):
+    if os.path.isfile(weights_path):
+        print("=> loading pretrained weight '{}'".format(weights_path))
+        source_state = torch.load(weights_path)
+        if 'state_dict' in source_state:
+            source_state = source_state['state_dict']
+        if 'model' in source_state:
+            source_state = source_state['model']
+        target_state = OrderedDict()
+        for k, v in source_state.items():
+            #if k.startswith('module.attacker.model.'):
+            #    k = k[len('module.attacker.model.'):]
+            #else:
+            #    continue
+            if k[:7] != 'module.':
+                k = 'module.' + k
+            target_state[k] = v
+
+        model.load_state_dict(target_state, strict=True)
+    else:
+        print("=> no weight found at '{}'".format(args.weight))
 
 def init_params(net):
     '''Init layer parameters.'''

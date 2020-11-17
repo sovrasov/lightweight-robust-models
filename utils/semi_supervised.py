@@ -1,8 +1,9 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 
 
-class FixMatchLoss(torch.nn.Module):
+class FixMatchLoss(nn.Module):
     # https://arxiv.org/pdf/2001.07685v1.pdf
     def __init__(self, T=1.0, p_cutoff=0.9, use_hard_labels=True, lambd=1.0):
         super().__init__()
@@ -55,3 +56,75 @@ def consistency_loss(logits_w, logits_s, T=1.0, p_cutoff=0.0, use_hard_labels=Tr
         pseudo_label = torch.softmax(logits_w/T, dim=-1)
         masked_loss = ce_loss(logits_s, pseudo_label, use_hard_labels) * mask
     return masked_loss.mean(), mask.mean()
+
+
+class InfoNCELoss(nn.Module):
+    def __init__(self, use_gpu=True, s=30, end_s=None, duration_s=None, skip_steps_s=None):
+        super(InfoNCELoss, self).__init__()
+        self.use_gpu = use_gpu
+
+        assert s > 0
+        self.start_s = s
+        assert self.start_s > 0.0
+        self.end_s = end_s
+        self.duration_s = duration_s
+        self.skip_steps_s = skip_steps_s
+        self.last_scale = self.start_s
+
+    @staticmethod
+    def get_last_info():
+        return {}
+
+    def get_last_scale(self):
+        return self.last_scale
+
+    @staticmethod
+    def _get_scale(start_scale, end_scale, duration, skip_steps, iteration, power=1.2):
+        def _invalid(_v):
+            return _v is None or _v <= 0
+
+        if not _invalid(skip_steps) and iteration < skip_steps:
+            return start_scale
+
+        if _invalid(iteration) or _invalid(end_scale) or _invalid(duration):
+            return start_scale
+
+        skip_steps = skip_steps if not _invalid(skip_steps) else 0
+        steps_to_end = duration - skip_steps
+        if iteration < duration:
+            factor = (end_scale - start_scale) / (1.0 - power)
+            var_a = factor / (steps_to_end ** power)
+            var_b = -factor * power / float(steps_to_end)
+
+            iteration -= skip_steps
+            out_value = var_a * np.power(iteration, power) + var_b * iteration + start_scale
+        else:
+            out_value = end_scale
+
+        return out_value
+
+    def forward(self, embd, target=None, iteration=None):
+        self.last_scale = self._get_scale(self.start_s, self.end_s, self.duration_s, self.skip_steps_s, iteration)
+
+        norm_embd = F.normalize(embd, p=2, dim=1)
+        num_samples = norm_embd.size(0)
+
+        similarities = torch.mm(norm_embd, torch.t(norm_embd)).clamp(-1, 1)
+        all_scores = torch.exp(self.last_scale * similarities)
+
+        with torch.no_grad():
+            batch_ids = torch.arange(embd.size(0), device=embd.device)
+
+            top_matched = batch_ids.view(-1, 1) + 1 == batch_ids.view(1, -1)
+            bottom_matched = batch_ids.view(-1, 1) == batch_ids.view(1, -1) + 1
+            pos_mask = torch.where((batch_ids % 2 == 0).view(-1, 1), top_matched, bottom_matched)
+
+            non_diagonal = batch_ids.view(-1, 1) != batch_ids.view(1, -1)
+            neg_mask = ~pos_mask & non_diagonal
+
+        pos_scores = all_scores[pos_mask].view(num_samples)
+        neg_scores = all_scores[neg_mask].view(num_samples, num_samples - 2)
+
+        losses = torch.log(pos_scores / (pos_scores + neg_scores.sum(dim=1))).neg()
+
+        return losses.mean()

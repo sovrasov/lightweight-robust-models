@@ -21,7 +21,7 @@ def fast_collate(batch):
     imgs = []
     targets = []
     for img, target in batch:
-        if target == -1:
+        if target == CustomOI.AUGMENTED_NO_LABEL:
             imgs.append(img[0])
             imgs.append(img[1])
             targets.append(target)
@@ -82,14 +82,22 @@ class PrefetchedWrapper(object):
         self.epoch += 1
         return PrefetchedWrapper.prefetched_loader(self.dataloader)
 
-def get_pytorch_train_loader(data_path, batch_size, custom_oi_kwargs={}, workers=5, _worker_init_fn=None, input_size=224):
+def get_pytorch_train_loader(data_path, batch_size, custom_oi_kwargs={}, workers=5, _worker_init_fn=None, input_size=224, unsupervised=False):
     traindir = os.path.join(data_path, 'train')
-    train_transform = transforms.Compose([
-                transforms.RandomResizedCrop(input_size),
-                transforms.RandomHorizontalFlip(),
-                ])
-    train_dataset = datasets.ImageFolder(
-            traindir, train_transform)
+    if unsupervised:
+        train_transform = transforms.Compose([transforms.RandomResizedCrop(input_size),
+                                              RandAugment(3, 5, cutout=False),
+                                              transforms.RandomHorizontalFlip(),
+                                              ])
+        datasets.ImageFolder.__getitem__ = custom_getitem
+    else:
+        train_transform = transforms.Compose([
+                    transforms.RandomResizedCrop(input_size),
+                    transforms.RandomHorizontalFlip(),
+                    ])
+
+    train_dataset = datasets.ImageFolder(traindir, train_transform)
+
     if len(custom_oi_kwargs) and len(custom_oi_kwargs['dump_path']):
         root_dir = os.path.dirname(custom_oi_kwargs['dump_path'])
         custom_oi_kwargs['transform'] = train_transform
@@ -132,6 +140,17 @@ def get_pytorch_val_loader(data_path, batch_size, workers=5, _worker_init_fn=Non
             collate_fn=fast_collate)
 
     return PrefetchedWrapper(val_loader), len(val_loader)
+
+
+def custom_getitem(self, index):
+    path, target = self.samples[index]
+    sample = self.loader(path)
+    if self.transform is not None:
+        sample = self.transform(sample)
+        sample2 = self.transform(sample)
+    if self.target_transform is not None:
+        target = self.target_transform(target)
+    return (sample, sample2), CustomOI.AUGMENTED_NO_LABEL
 
 
 from torch.utils.data import Dataset
