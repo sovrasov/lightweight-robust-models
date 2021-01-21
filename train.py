@@ -22,6 +22,7 @@ from tensorboardX import SummaryWriter
 from utils.pgd import pgd_attack
 from utils.regularizers import LinDLReg
 from utils.semi_supervised import FixMatchLoss, InfoNCELoss
+from utils.am_softmax import AMSoftmaxLoss, modify_ptcv_model
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -35,7 +36,7 @@ parser.add_argument('--arch-student', default='', type=str,
                     choices=_models.keys(),
                     help='model architecture: ' +
                         ' | '.join(_models.keys()))
-
+parser.add_argument('--loss-type', default='softmax', type=str, choices=['softmax', 'am_softmax'])
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
@@ -132,10 +133,12 @@ def main():
 
     # create model
     print("=> creating model '{}'".format(args.arch))
-    models = [get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=num_classes, pretrained=False)]
+    models = [modify_ptcv_model(get_model(args.arch, in_size=(args.input_size, args.input_size),
+                                          num_classes=num_classes, pretrained=False), args.loss_type)]
     if len(args.arch_student):
         print("=> creating model '{}'".format(args.arch_student))
-        models.append(get_model(args.arch_student, in_size=(args.input_size, args.input_size), num_classes=num_classes, pretrained=False))
+        models.append(modify_ptcv_model(get_model(args.arch_student, in_size=(args.input_size, args.input_size),
+                                                  num_classes=num_classes, pretrained=False), args.loss_type))
 
 
     if not args.distributed:
@@ -151,7 +154,10 @@ def main():
         criterion = InfoNCELoss().cuda()
         val_criterion = None
     else:
-        criterion = nn.CrossEntropyLoss().cuda()
+        if args.loss_type == 'softmax':
+            criterion = nn.CrossEntropyLoss().cuda()
+        elif args.loss_type == 'am_softmax':
+            criterion = AMSoftmaxLoss(m=0.35, s=30)
         val_criterion = criterion
 
     reg_criterion = LinDLReg(args.lin_reg).cuda()
