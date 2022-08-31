@@ -32,7 +32,7 @@ python train.py \
  -j 40
 ```
 
-An example of an avaluation command:
+An example of an evaluation command:
 ```bash
 python3 train.py \
  -a mobilenetv2_w1 \
