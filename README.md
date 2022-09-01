@@ -8,7 +8,7 @@ which means robust weights can be substituted to existing scripts that rely on p
 
 All the models are trained on adversarial samples obtained after 3 iterations of PGD with step=2/3*eps.
 
-Model            | Input Resolution | Params(M) | MACs(G) | eps | dist | Top-1 error | Top-5 error | Top-1 adv error | Top-5 adv error
+Model            | Input Resolution | Params(M) | MACs(G) | eps | dist | Top-1 accuracy | Top-5 accuracy | Top-1 adv accuracy | Top-5 adv accuracy
 ---              |---               |---        |---      |---  |---   |---          |---          |---              |---
 [MobilenetV2 1x](https://drive.google.com/file/d/1WCRjp9Q1oIuRpjmu9hLuE8uf9pLV2LMN/view?usp=sharing)   |224x224           | 3.4       | 0.3     | 0.02| l2   | 72.16       | 90.62       | 71.72           | 90.40
 [MobilenetV2 1x](https://drive.google.com/file/d/1O82imwnSBfiaLRFs361jXWmgwkjWwYGv/view?usp=sharing)   |224x224           | 3.4       | 0.3     | 0.05| l2   | 72.12       | 90.34       | 71.11           | 89.84
