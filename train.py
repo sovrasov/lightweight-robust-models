@@ -17,9 +17,43 @@ from pytorchcv.model_provider import get_model, _models
 
 from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from utils.dataloaders import get_pytorch_train_loader, get_pytorch_val_loader
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 from utils.pgd import pgd_attack
+from utils.nka import nka_attack, adversarial_nka_loss, adv_rej_acc
+
+
+class LENet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.relu1 = nn.ReLU()
+        self.pool1 = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.relu2 = nn.ReLU()
+        self.pool2 = nn.MaxPool2d(2)
+        self.fc1 = nn.Linear(256, 120)
+        self.relu3 = nn.ReLU()
+        self.fc2 = nn.Linear(120, 84)
+        self.relu4 = nn.ReLU()
+        self.fc3 = nn.Linear(84, 10)
+        self.relu5 = nn.ReLU()
+
+    def forward(self, x):
+        y = self.conv1(x)
+        y = self.relu1(y)
+        y = self.pool1(y)
+        y = self.conv2(y)
+        y = self.relu2(y)
+        y = self.pool2(y)
+        y = y.view(y.shape[0], -1)
+        y = self.fc1(y)
+        y = self.relu3(y)
+        y = self.fc2(y)
+        y = self.relu4(y)
+        y = self.fc3(y)
+        y = self.relu5(y)
+        return y
 
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -114,10 +148,10 @@ def main():
 
     # create model
     print("=> creating model '{}'".format(args.arch))
-    model = get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=1000)
+    model = LENet() # get_model(args.arch, in_size=(args.input_size, args.input_size), num_classes=10)
 
     if not args.distributed:
-            model = torch.nn.DataParallel(model).cuda()
+        model = torch.nn.DataParallel(model).cuda()
     else:
         model.cuda()
         model = torch.nn.parallel.DistributedDataParallel(model)
@@ -183,7 +217,7 @@ def main():
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps, 
+        validate(val_loader, val_loader_len, model, criterion, adv_eps=args.adv_eps,
                  euclidean_adv=args.euclidean)
         return
 
@@ -254,21 +288,30 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
         data_time.update(time.time() - end)
 
         target = target.cuda(non_blocking=True)
+        num_adv = int(input.shape[0] * 0.2)
+        #print('na', num_adv)
+
+        input_adv = input[ : num_adv]
+        target_adv = target[ : num_adv]
+
+        inp_normal = input[num_adv : ]
+        target_normal = target[num_adv : ]
 
         # compute output
         if args.adv_eps > 0.:
             model.eval()
-            adv_data = pgd_attack(model, input, target, epsilon=args.adv_eps, euclidean=args.euclidean,
+            adv_data = nka_attack(model, input_adv, target_adv, epsilon=args.adv_eps, euclidean=args.euclidean,
                                   step_size=2./3.*args.adv_eps, criterion=criterion)
             model.train()
-            output = model(adv_data)
+            output_adv = model(adv_data)
         else:
-            output = model(input)
+            output_adv = model(input)
 
-        loss = criterion(output, target)
+        output_normal = model(inp_normal)
+        loss = criterion(output_normal, target_normal) + 0.2 * adversarial_nka_loss(output_adv, target_adv)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output, target, topk=(1, 5))
+        prec1, prec5 = accuracy(output_normal, target_normal, topk=(1, 5))
         losses.update(loss.item(), input.size(0))
         top1.update(prec1.item(), input.size(0))
         top5.update(prec5.item(), input.size(0))
@@ -332,14 +375,15 @@ def validate(val_loader, val_loader_len, model, criterion, adv_eps=0.0, euclidea
         top5.update(prec5.item(), input.size(0))
 
         if adv_eps > 0.:
-            adv_data = pgd_attack(model, input, target, epsilon=adv_eps, euclidean=euclidean_adv,
+            adv_data = nka_attack(model, input, target, epsilon=adv_eps, euclidean=euclidean_adv,
                                   step_size=2./3.*adv_eps, criterion=criterion)
             with torch.no_grad():
                 output = model(adv_data)
                 loss = criterion(output, target)
             adv_prec1, adv_prec5 = accuracy(output, target, topk=(1, 5))
+            #adv_prec1, adv_prec5 = adv_rej_acc(output), 0
             adv_top1.update(adv_prec1.item(), input.size(0))
-            adv_top5.update(adv_prec5.item(), input.size(0))
+            #adv_top5.update(adv_prec5.item(), input.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
